@@ -158,7 +158,7 @@ def subp(
     update_env=None,
     status_cb=None,
     cwd=None,
-) -> SubpResult:
+):
     """Run a subprocess.
 
     :param args: command to run in a list. [cmd, arg1, arg2...]
@@ -345,7 +345,6 @@ def target_path(target, path=None):
     # os.path.join("/etc", "/foo") returns "/foo". Chomp all leading /.
     while len(path) and path[0] == "/":
         path = path[1:]
-
     return os.path.join(target, path)
 
 
@@ -406,12 +405,16 @@ def runparts(dirp, skip_no_exist=True, exe_prefix=None):
             except ProcessExecutionError as e:
                 LOG.debug(e)
                 failed.append(exe_name)
+        else:
+            LOG.warning(
+                "skipping %s as its not executable "
+                "or the underlying file system is mounted without "
+                "executable permissions.",
+                exe_path,
+            )
 
     if failed and attempted:
         raise RuntimeError(
             f'Runparts: {len(failed)} failures ({",".join(failed)}) in '
             f"{len(attempted)} attempted commands"
         )
-
-
-# vi: ts=4 expandtab

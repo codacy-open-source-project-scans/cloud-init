@@ -739,9 +739,6 @@ probe_floppy() {
 dscheck_CloudStack() {
     is_container && return ${DS_NOT_FOUND}
     dmi_product_name_matches "CloudStack*" && return $DS_FOUND
-    if [ "$DI_VIRT" = "vmware" ] || [ "$DI_VIRT" = "xen" ]; then
-        return $DS_MAYBE
-    fi
     return $DS_NOT_FOUND
 }
 
@@ -972,14 +969,74 @@ vmware_guest_customization() {
     return 1
 }
 
+vmware_has_rpctool() {
+    command -v vmware-rpctool >/dev/null 2>&1
+}
+
+vmware_rpctool_guestinfo() {
+    vmware-rpctool "info-get guestinfo.${1}" 2>/dev/null | grep "[[:alnum:]]"
+}
+
+vmware_rpctool_guestinfo_err() {
+    vmware-rpctool "info-get guestinfo.${1}" 2>&1 | grep "[[:alnum:]]"
+}
+
+vmware_has_vmtoolsd() {
+    command -v vmtoolsd >/dev/null 2>&1
+}
+
+vmware_vmtoolsd_guestinfo() {
+    vmtoolsd --cmd "info-get guestinfo.${1}" 2>/dev/null | grep "[[:alnum:]]"
+}
+
+vmware_vmtoolsd_guestinfo_err() {
+    vmtoolsd --cmd "info-get guestinfo.${1}" 2>&1 | grep "[[:alnum:]]"
+}
+
+vmware_guestinfo() {
+    vmware_rpctool_guestinfo "${1}" || vmware_vmtoolsd_guestinfo "${1}"
+}
+
+vmware_guestinfo_err() {
+    vmware_rpctool_guestinfo_err "${1}" || vmware_vmtoolsd_guestinfo_err "${1}"
+}
+
+vmware_guestinfo_ovfenv_err() {
+    vmware_guestinfo_err "ovfEnv"
+}
+
+vmware_guestinfo_metadata() {
+    if [ "${1:-}" = "err" ]; then
+      vmware_guestinfo_err "metadata"
+    else
+      vmware_guestinfo "metadata"
+    fi
+}
+
+vmware_guestinfo_userdata() {
+    if [ "${1:-}" = "err" ]; then
+      vmware_guestinfo_err "userdata"
+    else
+      vmware_guestinfo "userdata"
+    fi
+}
+
+vmware_guestinfo_vendordata() {
+    if [ "${1:-}" = "err" ]; then
+      vmware_guestinfo_err "vendordata"
+    else
+      vmware_guestinfo "vendordata"
+    fi
+}
+
 ovf_vmware_transport_guestinfo() {
     [ "${DI_VIRT}" = "vmware" ] || return 1
-    command -v vmware-rpctool >/dev/null 2>&1 || return 1
+    vmware_has_rpctool || vmware_has_vmtoolsd || return 1
     local out="" ret=""
-    out=$(vmware-rpctool "info-get guestinfo.ovfEnv" 2>&1)
+    out=$(vmware_guestinfo_ovfenv_err)
     ret=$?
     if [ $ret -ne 0 ]; then
-        debug 1 "Running on vmware but rpctool query returned $ret: $out"
+        debug 1 "Running on vmware but query returned $ret: $out"
         return 1
     fi
     case "$out" in
@@ -1036,6 +1093,23 @@ has_ovf_cdrom() {
             is_cdrom_ovf "${tok%%=*}" "${tok#*=}" && return 0
         done
     fi
+    return 1
+}
+
+is_disabled() {
+    if [ -f /etc/cloud/cloud-init.disabled ]; then
+        debug 1 "disabled by marker file /etc/cloud-init.disabled"
+        return 0
+    fi
+    if [ "${KERNEL_CMDLINE:-}" = "cloud-init=disabled" ]; then
+        debug 1 "disabled by KERNEL_CMDLINE environment variable"
+        return 0
+    fi
+    case "$DI_KERNEL_CMDLINE" in
+       *cloud-init=disabled*)
+            debug 1 "disabled by kernel command line cloud-init=disabled"
+            return 0
+    esac
     return 1
 }
 
@@ -1439,26 +1513,6 @@ vmware_has_envvar_vmx_guestinfo_vendordata() {
     [ -n "${VMX_GUESTINFO_VENDORDATA:-}" ]
 }
 
-vmware_has_rpctool() {
-    command -v vmware-rpctool >/dev/null 2>&1
-}
-
-vmware_rpctool_guestinfo() {
-    vmware-rpctool "info-get guestinfo.${1}" 2>/dev/null | grep "[[:alnum:]]"
-}
-
-vmware_rpctool_guestinfo_metadata() {
-    vmware_rpctool_guestinfo "metadata"
-}
-
-vmware_rpctool_guestinfo_userdata() {
-    vmware_rpctool_guestinfo "userdata"
-}
-
-vmware_rpctool_guestinfo_vendordata() {
-    vmware_rpctool_guestinfo "vendordata"
-}
-
 dscheck_VMware() {
     # Checks to see if there is valid data for the VMware datasource.
     # The data transports are checked in the following order:
@@ -1486,16 +1540,16 @@ dscheck_VMware() {
         return "${DS_NOT_FOUND}"
     fi
 
-    # Do not proceed if the vmware-rpctool command is not present.
-    if ! vmware_has_rpctool; then
+    # Do not proceed if neither the vmware-rpctool or vmtoolsd command exists.
+    if ! vmware_has_rpctool && ! vmware_has_vmtoolsd; then
         return "${DS_NOT_FOUND}"
     fi
 
     # Activate the VMware datasource only if any of the fields used
     # by the datasource are present in the guestinfo table.
-    if { vmware_rpctool_guestinfo_metadata || \
-         vmware_rpctool_guestinfo_userdata || \
-         vmware_rpctool_guestinfo_vendordata; } >/dev/null 2>&1; then
+    if { vmware_guestinfo_metadata || \
+         vmware_guestinfo_userdata || \
+         vmware_guestinfo_vendordata; } >/dev/null 2>&1; then
         return "${DS_FOUND}"
     fi
 
@@ -1507,10 +1561,7 @@ dscheck_VMware() {
 }
 
 collect_info() {
-    read_uname_info
-    read_virt
     read_pid1_product_name
-    read_kernel_cmdline
     read_config
     read_datasource_list
     read_dmi_sys_vendor
@@ -1785,6 +1836,12 @@ _main() {
 
     read_uptime
     debug 1 "[up ${_RET}s]" "ds-identify $*"
+    read_uname_info
+    read_virt
+    read_kernel_cmdline
+    if is_disabled; then
+        return 2
+    fi
     collect_info
 
     if [ "$DI_LOG" = "stderr" ]; then
@@ -1931,5 +1988,3 @@ case "${DI_MAIN}" in
     main|print_info|noop) "${DI_MAIN}" "$@";;
     *) error "unexpected value for DI_MAIN"; exit 1;;
 esac
-
-# vi: syntax=sh ts=4 expandtab

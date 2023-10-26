@@ -6,6 +6,7 @@
 
 import copy
 import json
+import logging
 import os
 import sys
 from collections import namedtuple
@@ -19,9 +20,11 @@ from cloudinit import (
     handlers,
     helpers,
     importer,
+    net,
+    sources,
+    type_utils,
+    util,
 )
-from cloudinit import log as logging
-from cloudinit import net, sources, type_utils, util
 from cloudinit.event import EventScope, EventType, userdata_to_events
 
 # Default handlers (used if not overridden)
@@ -224,7 +227,7 @@ class Init:
         log_file = util.get_cfg_option_str(self.cfg, "def_log_file")
         if log_file:
             # At this point the log file should have already been created
-            # in the setupLogging function of log.py
+            # in the setup_logging function of log.py
 
             try:
                 fmode = util.get_permissions(log_file)
@@ -931,6 +934,22 @@ class Init:
         )
 
     def _apply_netcfg_names(self, netcfg):
+        ncfg_instance_path = self.paths.get_ipath_cur("network_config")
+        network_link = self.paths.get_runpath("network_config")
+        if not self._network_already_configured():
+            if os.path.exists(ncfg_instance_path):
+                if netcfg != util.load_json(
+                    util.load_file(ncfg_instance_path)
+                ):
+                    atomic_helper.write_json(
+                        ncfg_instance_path, netcfg, mode=0o600
+                    )
+            else:
+                atomic_helper.write_json(
+                    ncfg_instance_path, netcfg, mode=0o600
+                )
+        if not os.path.islink(network_link):
+            util.sym_link(ncfg_instance_path, network_link)
         try:
             LOG.debug("applying net config names for %s", netcfg)
             self.distro.networking.apply_network_config_names(netcfg)
@@ -953,6 +972,8 @@ class Init:
         Find the config, determine whether to apply it, apply it via
         the distro, and optionally bring it up
         """
+        from cloudinit.config.schema import validate_cloudconfig_schema
+
         netcfg, src = self._find_networking_config()
         if netcfg is None:
             LOG.info("network config is disabled by %s", src)
@@ -988,6 +1009,15 @@ class Init:
 
         # refresh netcfg after update
         netcfg, src = self._find_networking_config()
+
+        if netcfg and netcfg.get("version") == 1:
+            validate_cloudconfig_schema(
+                config=netcfg,
+                schema_type="network-config",
+                strict=False,
+                log_details=True,
+                log_deprecations=True,
+            )
 
         # ensure all physical devices in config are present
         self.distro.networking.wait_for_physdevs(netcfg)

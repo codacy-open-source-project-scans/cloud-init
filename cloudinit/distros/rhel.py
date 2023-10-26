@@ -7,12 +7,11 @@
 # Author: Joshua Harlow <harlowja@yahoo-inc.com>
 #
 # This file is part of cloud-init. See LICENSE file for license information.
+import logging
 import os
 
-from cloudinit import distros, helpers
-from cloudinit import log as logging
-from cloudinit import subp, util
-from cloudinit.distros import rhel_util
+from cloudinit import distros, helpers, subp, util
+from cloudinit.distros import PackageList, rhel_util
 from cloudinit.distros.parsers.hostname import HostnameConf
 from cloudinit.settings import PER_INSTANCE
 
@@ -56,7 +55,7 @@ class Distro(distros.Distro):
         self.system_locale = None
         cfg["ssh_svcname"] = "sshd"
 
-    def install_packages(self, pkglist):
+    def install_packages(self, pkglist: PackageList):
         self.package_command("install", pkgs=pkglist)
 
     def get_locale(self):
@@ -75,7 +74,6 @@ class Distro(distros.Distro):
         if self.uses_systemd():
             if not out_fn:
                 out_fn = self.systemd_locale_conf_fn
-            out_fn = self.systemd_locale_conf_fn
         else:
             if not out_fn:
                 out_fn = self.locale_conf_fn
@@ -209,6 +207,3 @@ class Distro(distros.Distro):
             ["makecache"],
             freq=PER_INSTANCE,
         )
-
-
-# vi: ts=4 expandtab

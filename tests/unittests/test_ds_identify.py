@@ -330,6 +330,10 @@ class DsIdentifyBase(CiTestCase):
                 "err": "No dmidecode program. ERROR.",
             },
             {
+                "name": "is_disabled",
+                "ret": 1,
+            },
+            {
                 "name": "get_kenv_field",
                 "ret": 1,
                 "err": "No kenv program. ERROR.",
@@ -1013,7 +1017,8 @@ class TestDsIdentify(DsIdentifyBase):
 
     def test_vmware_guestinfo_no_data(self):
         """VMware: guestinfo transport no data"""
-        self._test_ds_not_found("VMware-GuestInfo-NoData")
+        self._test_ds_not_found("VMware-GuestInfo-NoData-Rpctool")
+        self._test_ds_not_found("VMware-GuestInfo-NoData-Vmtoolsd")
 
     def test_vmware_guestinfo_no_virt_id(self):
         """VMware: guestinfo transport fails if no virt id"""
@@ -1632,7 +1637,6 @@ VALID_CFG = {
     },
     "IBMCloud-metadata": {
         "ds": "IBMCloud",
-        "policy_dmi": POLICY_FOUND_ONLY,
         "mocks": [
             MOCK_VIRT_IS_XEN,
             {"name": "is_ibm_provisioning", "ret": shell_false},
@@ -1699,7 +1703,6 @@ VALID_CFG = {
     },
     "IBMCloud-nodisks": {
         "ds": "IBMCloud",
-        "policy_dmi": POLICY_FOUND_ONLY,
         "mocks": [
             MOCK_VIRT_IS_XEN,
             {"name": "is_ibm_provisioning", "ret": shell_false},
@@ -1786,7 +1789,6 @@ VALID_CFG = {
     },
     "VMware-NoValidTransports": {
         "ds": "VMware",
-        "policy_dmi": POLICY_FOUND_ONLY,
         "mocks": [
             MOCK_VIRT_IS_VMWARE,
         ],
@@ -1800,6 +1802,11 @@ VALID_CFG = {
                 "ret": 0,
                 "out": "/usr/bin/vmware-rpctool",
             },
+            {
+                "name": "vmware_has_vmtoolsd",
+                "ret": 1,
+                "out": "/usr/bin/vmtoolsd",
+            },
         ],
         "files": {
             # Setup vmware customization enabled
@@ -1809,7 +1816,6 @@ VALID_CFG = {
     },
     "VMware-EnvVar-NoData": {
         "ds": "VMware",
-        "policy_dmi": POLICY_FOUND_ONLY,
         "mocks": [
             {
                 "name": "vmware_has_envvar_vmx_guestinfo",
@@ -1917,9 +1923,8 @@ VALID_CFG = {
             MOCK_VIRT_IS_VMWARE,
         ],
     },
-    "VMware-GuestInfo-NoData": {
+    "VMware-GuestInfo-NoData-Rpctool": {
         "ds": "VMware",
-        "policy_dmi": POLICY_FOUND_ONLY,
         "mocks": [
             {
                 "name": "vmware_has_rpctool",
@@ -1927,15 +1932,49 @@ VALID_CFG = {
                 "out": "/usr/bin/vmware-rpctool",
             },
             {
-                "name": "vmware_rpctool_guestinfo_metadata",
+                "name": "vmware_has_vmtoolsd",
+                "ret": 1,
+                "out": "/usr/bin/vmtoolsd",
+            },
+            {
+                "name": "vmware_guestinfo_metadata",
                 "ret": 1,
             },
             {
-                "name": "vmware_rpctool_guestinfo_userdata",
+                "name": "vmware_guestinfo_userdata",
                 "ret": 1,
             },
             {
-                "name": "vmware_rpctool_guestinfo_vendordata",
+                "name": "vmware_guestinfo_vendordata",
+                "ret": 1,
+            },
+            MOCK_VIRT_IS_VMWARE,
+        ],
+    },
+    "VMware-GuestInfo-NoData-Vmtoolsd": {
+        "ds": "VMware",
+        "policy_dmi": POLICY_FOUND_ONLY,
+        "mocks": [
+            {
+                "name": "vmware_has_rpctool",
+                "ret": 1,
+                "out": "/usr/bin/vmware-rpctool",
+            },
+            {
+                "name": "vmware_has_vmtoolsd",
+                "ret": 0,
+                "out": "/usr/bin/vmtoolsd",
+            },
+            {
+                "name": "vmware_guestinfo_metadata",
+                "ret": 1,
+            },
+            {
+                "name": "vmware_guestinfo_userdata",
+                "ret": 1,
+            },
+            {
+                "name": "vmware_guestinfo_vendordata",
                 "ret": 1,
             },
             MOCK_VIRT_IS_VMWARE,
@@ -1950,16 +1989,16 @@ VALID_CFG = {
                 "out": "/usr/bin/vmware-rpctool",
             },
             {
-                "name": "vmware_rpctool_guestinfo_metadata",
+                "name": "vmware_guestinfo_metadata",
                 "ret": 0,
                 "out": "---",
             },
             {
-                "name": "vmware_rpctool_guestinfo_userdata",
+                "name": "vmware_guestinfo_userdata",
                 "ret": 1,
             },
             {
-                "name": "vmware_rpctool_guestinfo_vendordata",
+                "name": "vmware_guestinfo_vendordata",
                 "ret": 1,
             },
         ],
@@ -1969,20 +2008,25 @@ VALID_CFG = {
         "mocks": [
             {
                 "name": "vmware_has_rpctool",
-                "ret": 0,
+                "ret": 1,
                 "out": "/usr/bin/vmware-rpctool",
             },
             {
-                "name": "vmware_rpctool_guestinfo_metadata",
+                "name": "vmware_has_vmtoolsd",
+                "ret": 0,
+                "out": "/usr/bin/vmtoolsd",
+            },
+            {
+                "name": "vmware_guestinfo_metadata",
                 "ret": 0,
                 "out": "---",
             },
             {
-                "name": "vmware_rpctool_guestinfo_userdata",
+                "name": "vmware_guestinfo_userdata",
                 "ret": 1,
             },
             {
-                "name": "vmware_rpctool_guestinfo_vendordata",
+                "name": "vmware_guestinfo_vendordata",
                 "ret": 1,
             },
             MOCK_VIRT_IS_VMWARE,
@@ -1997,16 +2041,21 @@ VALID_CFG = {
                 "out": "/usr/bin/vmware-rpctool",
             },
             {
-                "name": "vmware_rpctool_guestinfo_metadata",
+                "name": "vmware_has_vmtoolsd",
+                "ret": 1,
+                "out": "/usr/bin/vmtoolsd",
+            },
+            {
+                "name": "vmware_guestinfo_metadata",
                 "ret": 1,
             },
             {
-                "name": "vmware_rpctool_guestinfo_userdata",
+                "name": "vmware_guestinfo_userdata",
                 "ret": 0,
                 "out": "---",
             },
             {
-                "name": "vmware_rpctool_guestinfo_vendordata",
+                "name": "vmware_guestinfo_vendordata",
                 "ret": 1,
             },
             MOCK_VIRT_IS_VMWARE,
@@ -2017,19 +2066,24 @@ VALID_CFG = {
         "mocks": [
             {
                 "name": "vmware_has_rpctool",
-                "ret": 0,
+                "ret": 1,
                 "out": "/usr/bin/vmware-rpctool",
             },
             {
-                "name": "vmware_rpctool_guestinfo_metadata",
+                "name": "vmware_has_vmtoolsd",
+                "ret": 0,
+                "out": "/usr/bin/vmtoolsd",
+            },
+            {
+                "name": "vmware_guestinfo_metadata",
                 "ret": 1,
             },
             {
-                "name": "vmware_rpctool_guestinfo_userdata",
+                "name": "vmware_guestinfo_userdata",
                 "ret": 1,
             },
             {
-                "name": "vmware_rpctool_guestinfo_vendordata",
+                "name": "vmware_guestinfo_vendordata",
                 "ret": 0,
                 "out": "---",
             },
@@ -2058,5 +2112,3 @@ VALID_CFG = {
         },
     },
 }
-
-# vi: ts=4 expandtab

@@ -6,10 +6,10 @@
 #
 # This file is part of cloud-init. See LICENSE file for license information.
 
-from cloudinit import distros, helpers
-from cloudinit import log as logging
-from cloudinit import subp, util
-from cloudinit.distros import net_util
+import logging
+
+from cloudinit import distros, helpers, subp, util
+from cloudinit.distros import PackageList, net_util
 from cloudinit.distros.parsers.hostname import HostnameConf
 from cloudinit.settings import PER_INSTANCE
 
@@ -56,7 +56,7 @@ class Distro(distros.Distro):
             ["eselect", "locale", "set", self.default_locale], capture=False
         )
 
-    def install_packages(self, pkglist):
+    def install_packages(self, pkglist: PackageList):
         self.update_package_sources()
         self.package_command("", pkgs=pkglist)
 
@@ -264,6 +264,3 @@ def convert_resolv_conf(settings):
         for ns in settings:
             result += "nameserver %s\n" % ns
     return result
-
-
-# vi: ts=4 expandtab
