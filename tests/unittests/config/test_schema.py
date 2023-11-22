@@ -212,7 +212,13 @@ class TestGetSchema:
             [meta["id"] for meta in get_metas().values() if meta is not None]
         )
         assert "http://json-schema.org/draft-04/schema#" == schema["$schema"]
-        assert ["$defs", "$schema", "allOf"] == sorted(list(schema.keys()))
+        assert [
+            "$defs",
+            "$schema",
+            "additionalProperties",
+            "allOf",
+            "properties",
+        ] == sorted(list(schema.keys()))
         # New style schema should be defined in static schema file in $defs
         expected_subschema_defs = [
             {"$ref": "#/$defs/base_config"},
@@ -271,6 +277,7 @@ class TestGetSchema:
             {"$ref": "#/$defs/cc_yum_add_repo"},
             {"$ref": "#/$defs/cc_zypper_add_repo"},
             {"$ref": "#/$defs/reporting_config"},
+            {"$ref": "#/$defs/output_config"},
         ]
         found_subschema_defs = []
         legacy_schema_keys = []
@@ -1626,6 +1633,29 @@ class TestAnnotatedCloudconfigFile:
             schema_errors=schema_errors,
         )
 
+    @skipUnlessJsonSchema()
+    def test_annotated_invalid_top_level_key(self, tmp_path: Path, capsys):
+        expected_err = dedent(
+            """\
+            #cloud-config
+            invalid_key: value		# E1
+
+            # Errors: -------------
+            # E1: Additional properties are not allowed ('invalid_key' was unexpected)
+            """  # noqa: E501
+        )
+        config_file = tmp_path / "my.yaml"
+        config_file.write_text("#cloud-config\ninvalid_key: value\n")
+        with pytest.raises(
+            SchemaValidationError,
+            match="errors: invalid_key: Additional properties are not allowed",
+        ):
+            validate_cloudconfig_file(
+                str(config_file), get_schema(), annotate=True
+            )
+        out, _err = capsys.readouterr()
+        assert out.strip() == expected_err.strip()
+
 
 @mock.patch(M_PATH + "read_cfg_paths")  # called by parse_args help docs
 class TestMain:
@@ -1784,7 +1814,7 @@ class TestMain:
         vd_file = paths.get_ipath_cur("vendor_cloud_config")
         write_file(vd_file, b"#cloud-config\nssh_import_id: [me]")
         vd2_file = paths.get_ipath_cur("vendor2_cloud_config")
-        write_file(vd2_file, b"#cloud-config\nssh_pw_auth: true")
+        write_file(vd2_file, b"#cloud-config\nssh_pwauth: true")
         network_file = paths.get_ipath_cur("network_config")
         write_file(network_file, net_config)
         myargs = ["mycmd", "--system"]
@@ -1832,9 +1862,12 @@ class TestMain:
         assert expected == err
 
 
-def _get_meta_doc_examples(
-    file_glob="cloud-config*.txt", exclusion_match=r"^cloud-config-archive.*"
-):
+def _get_meta_doc_examples(file_glob="cloud-config*.txt"):
+    exlusion_patterns = [
+        "^cloud-config-archive.*",
+        "cloud-config-datasources.txt",
+    ]
+    exclusion_match = f"({'|'.join(exlusion_patterns)})"
     examples_dir = Path(cloud_init_project_dir("doc/examples"))
     assert examples_dir.is_dir()
     return (
@@ -2128,7 +2161,6 @@ class TestSchemaFuzz:
 
 
 class TestHandleSchemaArgs:
-
     Args = namedtuple(
         "Args", "config_file schema_type docs system annotate instance_data"
     )
