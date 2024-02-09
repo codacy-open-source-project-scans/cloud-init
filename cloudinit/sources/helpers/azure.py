@@ -4,8 +4,6 @@ import json
 import logging
 import os
 import re
-import socket
-import struct
 import textwrap
 import zlib
 from contextlib import contextmanager
@@ -221,20 +219,6 @@ def cd(newdir):
         yield
     finally:
         os.chdir(prevdir)
-
-
-def get_ip_from_lease_value(fallback_lease_value):
-    unescaped_value = fallback_lease_value.replace("\\", "")
-    if len(unescaped_value) > 4:
-        hex_string = ""
-        for hex_pair in unescaped_value.split(":"):
-            if len(hex_pair) == 1:
-                hex_pair = "0" + hex_pair
-            hex_string += hex_pair
-        packed_bytes = struct.pack(">L", int(hex_string.replace(":", ""), 16))
-    else:
-        packed_bytes = unescaped_value.encode("utf-8")
-    return socket.inet_ntoa(packed_bytes)
 
 
 @azure_ds_telemetry_reporter
@@ -719,10 +703,10 @@ class WALinuxAgentShim:
             self.openssl_manager.clean_up()
 
     @azure_ds_telemetry_reporter
-    def eject_iso(self, iso_dev) -> None:
+    def eject_iso(self, iso_dev, distro: distros.Distro) -> None:
+        LOG.debug("Ejecting the provisioning iso")
         try:
-            LOG.debug("Ejecting the provisioning iso")
-            subp.subp(["eject", iso_dev])
+            distro.eject_media(iso_dev)
         except Exception as e:
             report_diagnostic_event(
                 "Failed ejecting the provisioning iso: %s" % e,
@@ -731,7 +715,7 @@ class WALinuxAgentShim:
 
     @azure_ds_telemetry_reporter
     def register_with_azure_and_fetch_data(
-        self, pubkey_info=None, iso_dev=None
+        self, distro: distros.Distro, pubkey_info=None, iso_dev=None
     ) -> Optional[List[str]]:
         """Gets the VM's GoalState from Azure, uses the GoalState information
         to report ready/send the ready signal/provisioning complete signal to
@@ -762,7 +746,7 @@ class WALinuxAgentShim:
         )
 
         if iso_dev is not None:
-            self.eject_iso(iso_dev)
+            self.eject_iso(iso_dev, distro=distro)
 
         health_reporter.send_ready_signal()
         return ssh_keys
@@ -940,13 +924,14 @@ class WALinuxAgentShim:
 @azure_ds_telemetry_reporter
 def get_metadata_from_fabric(
     endpoint: str,
+    distro: distros.Distro,
     pubkey_info: Optional[List[str]] = None,
     iso_dev: Optional[str] = None,
 ):
     shim = WALinuxAgentShim(endpoint=endpoint)
     try:
         return shim.register_with_azure_and_fetch_data(
-            pubkey_info=pubkey_info, iso_dev=iso_dev
+            distro=distro, pubkey_info=pubkey_info, iso_dev=iso_dev
         )
     finally:
         shim.clean_up()
@@ -1011,7 +996,7 @@ class OvfEnvXml:
 
         :raises NonAzureDataSource: if XML is not in Azure's format.
         :raises errors.ReportableErrorOvfParsingException: if XML is
-                unparseable or invalid.
+                unparsable or invalid.
         """
         try:
             root = ElementTree.fromstring(ovf_env_xml)

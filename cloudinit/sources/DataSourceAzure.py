@@ -40,7 +40,6 @@ from cloudinit.sources.helpers.azure import (
     build_minimal_ovf,
     dhcp_log_cb,
     get_boot_telemetry,
-    get_ip_from_lease_value,
     get_metadata_from_fabric,
     get_system_info,
     report_diagnostic_event,
@@ -499,9 +498,7 @@ class DataSourceAzure(sources.DataSource):
 
             # Update wireserver IP from DHCP options.
             if "unknown-245" in lease:
-                self._wireserver_endpoint = get_ip_from_lease_value(
-                    lease["unknown-245"]
-                )
+                self._wireserver_endpoint = lease["unknown-245"]
 
             driver = device_driver(iface)
             ephipv4 = self._ephemeral_dhcp_ctx._ephipv4
@@ -1366,6 +1363,7 @@ class DataSourceAzure(sources.DataSource):
         try:
             data = get_metadata_from_fabric(
                 endpoint=self._wireserver_endpoint,
+                distro=self.distro,
                 iso_dev=self._iso_dev,
                 pubkey_info=pubkey_info,
             )
@@ -1832,7 +1830,7 @@ def read_azure_ovf(contents):
     :return: Tuple of metadata, configuration, userdata dicts.
 
     :raises NonAzureDataSource: if XML is not in Azure's format.
-    :raises errors.ReportableError: if XML is unparseable or invalid.
+    :raises errors.ReportableError: if XML is unparsable or invalid.
     """
     ovf_env = OvfEnvXml.parse_text(contents)
     md: Dict[str, Any] = {}
@@ -1949,7 +1947,7 @@ def generate_network_config_from_instance_network_metadata(
 ) -> dict:
     """Convert imds network metadata dictionary to network v2 configuration.
 
-    :param: network_metadata: Dict of "network" key from instance metdata.
+    :param: network_metadata: Dict of "network" key from instance metadata.
 
     :return: Dictionary containing network version 2 standard configuration.
     """

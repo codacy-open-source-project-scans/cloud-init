@@ -1892,6 +1892,14 @@ class TestMain:
                 "Skipping network-config schema validation. No network schema"
                 " for version: 2",
             ),
+            (
+                "network-config",
+                (
+                    b"network:\n version: 1\n config:\n  - type: physical\n"
+                    b"    name: eth0\n    subnets:\n      - type: dhcp\n"
+                ),
+                "Valid schema",
+            ),
         ),
     )
     def test_main_validates_config_file(
@@ -2327,6 +2335,20 @@ class TestNetworkSchema:
                 does_not_raise(),
                 "",
                 id="bond_with_all_known_properties",
+            ),
+            pytest.param(
+                {
+                    "network": {
+                        "version": 1,
+                        "config": [
+                            {"type": "physical", "name": "eth0", "mtu": None},
+                            {"type": "nameserver", "address": "8.8.8.8"},
+                        ],
+                    }
+                },
+                does_not_raise(),
+                "",
+                id="GH-4710_mtu_none_and_str_address",
             ),
         ),
     )

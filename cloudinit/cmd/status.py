@@ -93,6 +93,36 @@ boot_status_code: {boot_code}
 {description}"""
 
 
+def query_systemctl(
+    systemctl_args: List[str],
+    *,
+    wait: bool,
+    existing_status: Optional[UXAppStatus] = None,
+) -> str:
+    """Query systemd with retries and return output."""
+    while True:
+        try:
+            return subp.subp(["systemctl", *systemctl_args]).stdout.strip()
+        except subp.ProcessExecutionError as e:
+            if existing_status and existing_status in (
+                UXAppStatus.DEGRADED_RUNNING,
+                UXAppStatus.RUNNING,
+            ):
+                return ""
+            last_exception = e
+            if wait:
+                sleep(0.25)
+            else:
+                break
+    print(
+        "Failed to get status from systemd. "
+        "Cloud-init status may be inaccurate. ",
+        f"Error from systemctl: {last_exception.stderr}",
+        file=sys.stderr,
+    )
+    return ""
+
+
 def get_parser(parser=None):
     """Build or extend an arg parser for status utility.
 
@@ -166,7 +196,7 @@ def handle_status_args(name, args) -> int:
     if args.format == "tabular":
         prefix = "\n" if args.wait else ""
 
-        # For backwards compatability, don't report degraded status here,
+        # For backwards compatibility, don't report degraded status here,
         # extended_status key reports the complete status (includes degraded)
         state = UXAppStatusDegradedMapCompat.get(
             details.status, details.status
@@ -229,7 +259,9 @@ def handle_status_args(name, args) -> int:
     return 0
 
 
-def get_bootstatus(disable_file, paths) -> Tuple[UXAppBootStatusCode, str]:
+def get_bootstatus(
+    disable_file, paths, wait
+) -> Tuple[UXAppBootStatusCode, str]:
     """Report whether cloud-init current boot status
 
     @param disable_file: The path to the cloud-init disable file.
@@ -253,7 +285,7 @@ def get_bootstatus(disable_file, paths) -> Tuple[UXAppBootStatusCode, str]:
     elif "cloud-init=disabled" in os.environ.get("KERNEL_CMDLINE", "") or (
         uses_systemd()
         and "cloud-init=disabled"
-        in subp.subp(["systemctl", "show-environment"]).stdout
+        in query_systemctl(["show-environment"], wait=wait)
     ):
         bootstatus_code = UXAppBootStatusCode.DISABLED_BY_ENV_VARIABLE
         reason = (
@@ -272,7 +304,9 @@ def get_bootstatus(disable_file, paths) -> Tuple[UXAppBootStatusCode, str]:
     return (bootstatus_code, reason)
 
 
-def _get_error_or_running_from_systemd() -> Optional[UXAppStatus]:
+def _get_error_or_running_from_systemd(
+    existing_status: UXAppStatus, wait: bool
+) -> Optional[UXAppStatus]:
     """Get if systemd is in error or running state.
 
     Using systemd, we can get more fine-grained status of the
@@ -288,14 +322,18 @@ def _get_error_or_running_from_systemd() -> Optional[UXAppStatus]:
         "cloud-init.service",
         "cloud-init-local.service",
     ]:
-        stdout = subp.subp(
+        stdout = query_systemctl(
             [
-                "systemctl",
                 "show",
                 "--property=ActiveState,UnitFileState,SubState,MainPID",
                 service,
             ],
-        ).stdout
+            wait=wait,
+            existing_status=existing_status,
+        )
+        if not stdout:
+            # Systemd isn't ready
+            return None
         states = dict(
             [[x.strip() for x in r.split("=")] for r in stdout.splitlines()]
         )
@@ -311,7 +349,7 @@ def _get_error_or_running_from_systemd() -> Optional[UXAppStatus]:
                 continue
             elif states["SubState"] == "running" and states["MainPID"] == "0":
                 # Service is active, substate still reports running due to
-                # daemon or backgroud process spawned by CGroup/slice still
+                # daemon or background process spawned by CGroup/slice still
                 # running. MainPID being set back to 0 means control of the
                 # service/unit has exited in this case and
                 # "the process is no longer around".
@@ -324,39 +362,6 @@ def _get_error_or_running_from_systemd() -> Optional[UXAppStatus]:
         return UXAppStatus.RUNNING
     # All services exited normally or aren't enabled, so don't report
     # any particular status based on systemd.
-    return None
-
-
-def _get_error_or_running_from_systemd_with_retry(
-    existing_status: UXAppStatus, *, wait: bool
-) -> Optional[UXAppStatus]:
-    """Get systemd status and retry if dbus isn't ready.
-
-    If cloud-init has determined that we're still running, then we can
-    ignore the status from systemd. However, if cloud-init has detected error,
-    then we should retry on systemd status so we don't incorrectly report
-    error state while cloud-init is still running.
-    """
-    while True:
-        try:
-            return _get_error_or_running_from_systemd()
-        except subp.ProcessExecutionError as e:
-            last_exception = e
-            if existing_status in (
-                UXAppStatus.DEGRADED_RUNNING,
-                UXAppStatus.RUNNING,
-            ):
-                return None
-            if wait:
-                sleep(0.25)
-            else:
-                break
-    print(
-        "Failed to get status from systemd. "
-        "Cloud-init status may be inaccurate. ",
-        f"Error from systemctl: {last_exception.stderr}",
-        file=sys.stderr,
-    )
     return None
 
 
@@ -380,7 +385,7 @@ def get_status_details(
     result_file = os.path.join(paths.run_dir, "result.json")
 
     boot_status_code, description = get_bootstatus(
-        CLOUDINIT_DISABLED_FILE, paths
+        CLOUDINIT_DISABLED_FILE, paths, wait
     )
     if boot_status_code in DISABLED_BOOT_CODES:
         status = UXAppStatus.DISABLED
@@ -433,9 +438,7 @@ def get_status_details(
         UXAppStatus.NOT_RUN,
         UXAppStatus.DISABLED,
     ):
-        systemd_status = _get_error_or_running_from_systemd_with_retry(
-            status, wait=wait
-        )
+        systemd_status = _get_error_or_running_from_systemd(status, wait=wait)
         if systemd_status:
             status = systemd_status
 
