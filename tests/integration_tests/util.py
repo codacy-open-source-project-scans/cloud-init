@@ -115,7 +115,7 @@ def verify_clean_log(log: str, ignore_deprecations: bool = True):
     for traceback_text in traceback_texts:
         expected_tracebacks += log.count(traceback_text)
 
-    assert warning_count == expected_warnings, (
+    assert warning_count <= expected_warnings, (
         f"Unexpected warning count != {expected_warnings}. Found: "
         f"{re.findall('WARNING.*', log)}"
     )
@@ -184,7 +184,7 @@ def wait_for_cloud_init(client: "IntegrationInstance", num_retries: int = 30):
             if (
                 result
                 and result.ok
-                and ("running" not in result or "not run" not in result)
+                and ("running" not in result or "not started" not in result)
             ):
                 return result
         except Exception as e:

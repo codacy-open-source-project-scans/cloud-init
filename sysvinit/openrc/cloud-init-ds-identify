@@ -1,10 +1,11 @@
 #!/sbin/openrc-run
 
+description="cloud-init ds-identify"
+
 depend() {
-  after cloud-init-local
-  after cloud-init
-  before cloud-final
-  provide cloud-config
+  after localmount
+  before net
+  before cloud-init-local
 }
 
 start() {
@@ -13,7 +14,8 @@ start() {
   elif test -e /etc/cloud/cloud-init.disabled; then
     ewarn "$RC_SVCNAME is disabled via cloud-init.disabled file"
   else
-    cloud-init modules --mode config
+    ebegin "$description"
+    /usr/lib/cloud-init/ds-identify
+    eend $?
   fi
-  eend 0
 }

@@ -216,7 +216,13 @@ class IntegrationInstance:
             local_path=integration_settings.CLOUD_INIT_SOURCE,
             remote_path=remote_path,
         )
-        assert self.execute("dpkg -i {path}".format(path=remote_path)).ok
+        # Update APT cache so all package data is recent to avoid inability
+        # to install missing dependency errors due to stale cache.
+        self.execute("apt update")
+        # Use apt install instead of dpkg -i to pull in any changed pkg deps
+        assert self.execute(
+            f"apt install {remote_path} --yes --allow-downgrades"
+        ).ok
 
     @retry(tries=30, delay=1)
     def upgrade_cloud_init(self):
