@@ -41,6 +41,7 @@ from errno import ENOENT
 from functools import lru_cache, total_ordering
 from pathlib import Path
 from typing import (
+    TYPE_CHECKING,
     Callable,
     Deque,
     Dict,
@@ -67,6 +68,10 @@ from cloudinit import (
     version,
 )
 from cloudinit.settings import CFG_BUILTIN, PER_ONCE
+
+if TYPE_CHECKING:
+    # Avoid circular import
+    from cloudinit.helpers import Paths
 
 _DNS_REDIRECT_IP = None
 LOG = logging.getLogger(__name__)
@@ -2660,26 +2665,6 @@ def get_freebsd_devpth(path):
     return "/dev/" + label_part
 
 
-def get_device_info_from_zpool(zpool):
-    # zpool has 10 second timeout waiting for /dev/zfs LP: #1760173
-    if not os.path.exists("/dev/zfs"):
-        LOG.debug("Cannot get zpool info, no /dev/zfs")
-        return None
-    try:
-        (zpoolstatus, err) = subp.subp(["zpool", "status", zpool])
-    except subp.ProcessExecutionError as err:
-        LOG.warning("Unable to get zpool status of %s: %s", zpool, err)
-        return None
-    if len(err):
-        return None
-    r = r".*(ONLINE).*"
-    for line in zpoolstatus.split("\n"):
-        if re.search(r, line) and zpool not in line and "state" not in line:
-            disk = line.split()[0]
-            LOG.debug('found zpool "%s" on disk %s', zpool, disk)
-            return disk
-
-
 def parse_mount(path, get_mnt_opts=False):
     """Return the mount information for PATH given the lines ``mount(1)``
     This function is compatible with ``util.parse_mount_info()``"""
@@ -3290,14 +3275,14 @@ def deprecate_call(
     return wrapper
 
 
-def read_hotplug_enabled_file() -> dict:
+def read_hotplug_enabled_file(paths: "Paths") -> dict:
     content: dict = {"scopes": []}
     try:
         content = json.loads(
-            load_text_file(settings.HOTPLUG_ENABLED_FILE, quiet=False)
+            load_text_file(paths.get_cpath("hotplug.enabled"), quiet=False)
         )
     except FileNotFoundError:
-        LOG.debug("File not found: %s", settings.HOTPLUG_ENABLED_FILE)
+        LOG.debug("File not found: %s", paths.get_cpath("hotplug.enabled"))
     except json.JSONDecodeError as e:
         LOG.warning(
             "Ignoring contents of %s because it is not decodable. Error: %s",

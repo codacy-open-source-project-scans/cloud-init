@@ -2177,54 +2177,6 @@ class TestMountinfoParsing(helpers.ResourceUsingTestCase):
         expected = ("none", "tmpfs", "/run/lock")
         self.assertEqual(expected, util.parse_mount_info("/run/lock", lines))
 
-    @mock.patch(M_PATH + "os")
-    @mock.patch("cloudinit.subp.subp")
-    def test_get_device_info_from_zpool(self, zpool_output, m_os):
-        # mock /dev/zfs exists
-        m_os.path.exists.return_value = True
-        # mock subp command from util.get_mount_info_fs_on_zpool
-        zpool_output.return_value = (
-            helpers.readResource("zpool_status_simple.txt"),
-            "",
-        )
-        # save function return values and do asserts
-        ret = util.get_device_info_from_zpool("vmzroot")
-        self.assertEqual("gpt/system", ret)
-        self.assertIsNotNone(ret)
-        m_os.path.exists.assert_called_with("/dev/zfs")
-
-    @mock.patch(M_PATH + "os")
-    def test_get_device_info_from_zpool_no_dev_zfs(self, m_os):
-        # mock /dev/zfs missing
-        m_os.path.exists.return_value = False
-        # save function return values and do asserts
-        ret = util.get_device_info_from_zpool("vmzroot")
-        self.assertIsNone(ret)
-
-    @mock.patch(M_PATH + "os")
-    @mock.patch("cloudinit.subp.subp")
-    def test_get_device_info_from_zpool_handles_no_zpool(self, m_sub, m_os):
-        """Handle case where there is no zpool command"""
-        # mock /dev/zfs exists
-        m_os.path.exists.return_value = True
-        m_sub.side_effect = subp.ProcessExecutionError("No zpool cmd")
-        ret = util.get_device_info_from_zpool("vmzroot")
-        self.assertIsNone(ret)
-
-    @mock.patch(M_PATH + "os")
-    @mock.patch("cloudinit.subp.subp")
-    def test_get_device_info_from_zpool_on_error(self, zpool_output, m_os):
-        # mock /dev/zfs exists
-        m_os.path.exists.return_value = True
-        # mock subp command from util.get_mount_info_fs_on_zpool
-        zpool_output.return_value = (
-            helpers.readResource("zpool_status_simple.txt"),
-            "error",
-        )
-        # save function return values and do asserts
-        ret = util.get_device_info_from_zpool("vmzroot")
-        self.assertIsNone(ret)
-
     @mock.patch("cloudinit.subp.subp")
     def test_parse_mount_with_ext(self, mount_out):
         mount_out.return_value = (
@@ -3226,10 +3178,21 @@ class TestMaybeB64Decode:
         assert expected == util.maybe_b64decode(in_data)
 
 
+class MockPath:
+    def __init__(self, target_file="/does/not/exist"):
+        self.target_file = target_file
+
+    def get_cpath(self, *args):
+        assert args == (
+            "hotplug.enabled",
+        ), f"Invalid get_cpath argument {args}"
+        return self.target_file
+
+
 @pytest.mark.usefixtures("fake_filesystem")
 class TestReadHotplugEnabledFile:
     def test_file_not_found(self, caplog):
-        assert {"scopes": []} == util.read_hotplug_enabled_file()
+        assert {"scopes": []} == util.read_hotplug_enabled_file(MockPath())
         assert "enabled because it is not decodable" not in caplog.text
 
     def test_json_decode_error(self, caplog, tmpdir):
@@ -3240,7 +3203,9 @@ class TestReadHotplugEnabledFile:
             .join("hotplug.enabled")
         )
         target_file.write("asdfasdfa")
-        assert {"scopes": []} == util.read_hotplug_enabled_file()
+        assert {"scopes": []} == util.read_hotplug_enabled_file(
+            MockPath(target_file.strpath)
+        )
         assert "not decodable" in caplog.text
 
     @pytest.mark.parametrize("content", ['{"scopes": ["network"]}'])
@@ -3252,4 +3217,6 @@ class TestReadHotplugEnabledFile:
             .join("hotplug.enabled")
         )
         target_file.write(content)
-        assert {"scopes": ["network"]} == util.read_hotplug_enabled_file()
+        assert {"scopes": ["network"]} == util.read_hotplug_enabled_file(
+            MockPath(target_file.strpath)
+        )
