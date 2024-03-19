@@ -1,14 +1,32 @@
 import builtins
 import glob
 import os
+import shutil
 from pathlib import Path
 from unittest import mock
 
 import pytest
 
 from cloudinit import atomic_helper, log, util
+from cloudinit.gpg import GPG
 from tests.hypothesis import HAS_HYPOTHESIS
 from tests.unittests.helpers import retarget_many_wrapper
+
+
+@pytest.fixture
+def m_gpg():
+    MockGPG = mock.Mock(spec=GPG)
+    MockGPG.configure_mock(**{"getkeybyid.return_value": "fakekey"})
+    gpg = MockGPG()
+    gpg.list_keys = mock.Mock(return_value="<mocked: list_keys>")
+    gpg.getkeybyid = mock.Mock(return_value="<mocked: getkeybyid>")
+
+    # to make tests for cc_apt_configure behave, we need the mocked GPG
+    # to actually behave like a context manager
+    gpg.__enter__ = GPG.__enter__
+    gpg.__exit__ = GPG.__exit__
+    yield gpg
+
 
 FS_FUNCS = {
     os.path: [
@@ -22,6 +40,7 @@ FS_FUNCS = {
     os: [
         ("listdir", 1),
         ("mkdir", 1),
+        ("rmdir", 1),
         ("lstat", 1),
         ("symlink", 2),
         ("stat", 1),
@@ -49,12 +68,21 @@ FS_FUNCS = {
         ("write_file", 1),
         ("write_json", 1),
     ],
+    shutil: [
+        ("rmtree", 1),
+    ],
 }
 
 
 @pytest.fixture
 def fake_filesystem(mocker, tmpdir):
     """Mocks fs functions to operate under `tmpdir`"""
+    # This allows fake_filesystem to be used with production code that
+    # creates temporary directories. Functions like TemporaryDirectory()
+    # attempt to create a directory under "/tmp" assuming that it already
+    # exists, but then it fails because of the retargeting that happens here.
+    tmpdir.mkdir("tmp")
+
     for (mod, funcs) in FS_FUNCS.items():
         for f, nargs in funcs:
             func = getattr(mod, f)
