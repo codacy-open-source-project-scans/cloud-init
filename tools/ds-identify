@@ -438,7 +438,7 @@ cached() {
 
 detect_virt() {
     local virt="${UNAVAILABLE}" r="" out=""
-    if [ -d /run/systemd ]; then
+    if [ -d "${PATH_ROOT}/run/systemd" ]; then
         if [ -n "$DI_SYSTEMD_VIRTUALIZATION" ]; then
             virt=${DI_SYSTEMD_VIRTUALIZATION#*:}
             debug 2 "detected $virt via env variable SYSTEMD_VIRTUALIZATION"
@@ -2018,7 +2018,11 @@ _main() {
     # if there is only a single entry in $DI_DSLIST
     if [ $# -eq 1 ] || [ $# -eq 2 -a "$2" = "None" ] ; then
         debug 1 "single entry in datasource_list ($DI_DSLIST) use that."
-        found "$@"
+        if [ $# -eq 1 ]; then
+            write_result "datasource_list: [ $1 ]"
+        else
+            found "$@"
+        fi
         return
     fi
 
