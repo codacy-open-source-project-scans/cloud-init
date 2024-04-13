@@ -56,12 +56,13 @@ from typing import (
 )
 from urllib import parse
 
+import yaml
+
 from cloudinit import (
     features,
     importer,
     mergers,
     net,
-    safeyaml,
     settings,
     subp,
     temp_utils,
@@ -1009,7 +1010,7 @@ def load_yaml(blob, default=None, allowed=(dict,)):
             len(blob),
             allowed,
         )
-        converted = safeyaml.load(blob)
+        converted = yaml.safe_load(blob)
         if converted is None:
             LOG.debug("loaded blob returned None, returning default.")
             converted = default
@@ -1020,7 +1021,7 @@ def load_yaml(blob, default=None, allowed=(dict,)):
                 % (allowed, type_utils.obj_name(converted))
             )
         loaded = converted
-    except (safeyaml.YAMLError, TypeError, ValueError) as e:
+    except (yaml.YAMLError, TypeError, ValueError) as e:
         msg = "Failed loading yaml blob"
         mark = None
         if hasattr(e, "context_mark") and getattr(e, "context_mark"):
@@ -1796,13 +1797,9 @@ def get_config_logfiles(cfg):
     return list(set(logs + rotated_logs))
 
 
-def logexc(log, msg, *args):
-    # Setting this here allows this to change
-    # levels easily (not always error level)
-    # or even desirable to have that much junk
-    # coming out to a non-debug stream
-    if msg:
-        log.warning(msg, *args)
+def logexc(log, msg, *args, log_level: int = logging.WARNING) -> None:
+    log.log(log_level, msg, *args)
+
     # Debug gets the full trace.  However, nose has a bug whereby its
     # logcapture plugin doesn't properly handle the case where there is no
     # actual exception.  To avoid tracebacks during the test suite then, we'll
@@ -1810,7 +1807,7 @@ def logexc(log, msg, *args):
     # flight, we'll just pass in None.
     exc_info = sys.exc_info()
     if exc_info == (None, None, None):
-        exc_info = None
+        exc_info = None  # type: ignore
     log.debug(msg, exc_info=exc_info, *args)
 
 
@@ -2631,7 +2628,7 @@ def find_freebsd_part(fs):
         return splitted[0]
     elif len(splitted) == 3:
         return splitted[2]
-    elif splitted[2] in ["label", "gpt", "ufs"]:
+    elif splitted[2] in ["label", "gpt", "gptid", "ufs", "ufsid"]:
         target_label = fs[5:]
         (part, _err) = subp.subp(["glabel", "status", "-s"])
         for labels in part.split("\n"):
