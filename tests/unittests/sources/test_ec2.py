@@ -259,7 +259,7 @@ def disable_is_resolvable():
 
 
 def _register_ssh_keys(rfunc, base_url, keys_data):
-    """handle ssh key inconsistencies.
+    r"""handle ssh key inconsistencies.
 
     public-keys in the ec2 metadata is inconsistently formated compared
     to other entries.
@@ -295,7 +295,7 @@ def _register_ssh_keys(rfunc, base_url, keys_data):
 
 
 def register_mock_metaserver(base_url, data, responses_mock=None):
-    """Register with responses a ec2 metadata like service serving 'data'.
+    r"""Register with responses a ec2 metadata like service serving 'data'.
 
     If given a dictionary, it will populate urls under base_url for
     that dictionary.  For example, input of
@@ -349,7 +349,6 @@ class TestEc2:
 
     valid_platform_data = {
         "uuid": "ec212f79-87d1-2f1d-588f-d86dc0fd5412",
-        "uuid_source": "dmi",
         "serial": "ec212f79-87d1-2f1d-588f-d86dc0fd5412",
     }
 
@@ -855,7 +854,7 @@ class TestEc2:
         """Unknown platform data with strict_id true should return False."""
         uuid = "ab439480-72bf-11d3-91fc-b8aded755F9a"
         ds = self._setup_ds(
-            platform_data={"uuid": uuid, "uuid_source": "dmi", "serial": ""},
+            platform_data={"uuid": uuid, "serial": ""},
             sys_cfg={"datasource": {"Ec2": {"strict_id": True}}},
             md={"md": DEFAULT_METADATA},
             mocker=mocker,
@@ -869,7 +868,7 @@ class TestEc2:
         """Unknown platform data with strict_id false should return True."""
         uuid = "ab439480-72bf-11d3-91fc-b8aded755F9a"
         ds = self._setup_ds(
-            platform_data={"uuid": uuid, "uuid_source": "dmi", "serial": ""},
+            platform_data={"uuid": uuid, "serial": ""},
             sys_cfg={"datasource": {"Ec2": {"strict_id": False}}},
             md={"md": DEFAULT_METADATA},
             mocker=mocker,
@@ -1673,19 +1672,34 @@ class TestConvertEc2MetadataNetworkConfig:
             )
 
 
-class TesIdentifyPlatform:
+class TestIdentifyPlatform:
     def collmock(self, **kwargs):
         """return non-special _collect_platform_data updated with changes."""
         unspecial = {
             "asset_tag": "3857-0037-2746-7462-1818-3997-77",
             "serial": "H23-C4J3JV-R6",
             "uuid": "81c7e555-6471-4833-9551-1ab366c4cfd2",
-            "uuid_source": "dmi",
             "vendor": "tothecloud",
             "product_name": "cloudproduct",
         }
         unspecial.update(**kwargs)
         return unspecial
+
+    @mock.patch("cloudinit.sources.DataSourceEc2._collect_platform_data")
+    def test_identify_aws(self, m_collect):
+        """aws should be identified if uuid starts with ec2"""
+        m_collect.return_value = self.collmock(
+            uuid="ec2E1916-9099-7CAF-FD21-012345ABCDEF"
+        )
+        assert ec2.CloudNames.AWS == ec2.identify_platform()
+
+    @mock.patch("cloudinit.sources.DataSourceEc2._collect_platform_data")
+    def test_identify_aws_endian(self, m_collect):
+        """aws should be identified if uuid starts with ec2"""
+        m_collect.return_value = self.collmock(
+            uuid="45E12AEC-DCD1-B213-94ED-012345ABCDEF"
+        )
+        assert ec2.CloudNames.AWS == ec2.identify_platform()
 
     @mock.patch("cloudinit.sources.DataSourceEc2._collect_platform_data")
     def test_identify_aliyun(self, m_collect):

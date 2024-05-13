@@ -124,7 +124,7 @@ class DataSourceMAAS(sources.DataSource):
         if url_params.max_wait_seconds == 0:
             return False
 
-        starttime = time.time()
+        starttime = time.monotonic()
         url = url.rstrip("/")
         check_url = "%s/%s/meta-data/instance-id" % (url, MD_VERSION)
         urls = [check_url]
@@ -140,7 +140,7 @@ class DataSourceMAAS(sources.DataSource):
             LOG.critical(
                 "Giving up on md from %s after %i seconds",
                 urls,
-                int(time.time() - starttime),
+                int(time.monotonic() - starttime),
             )
 
         return bool(url)
@@ -179,7 +179,7 @@ def get_oauth_helper(cfg):
     """Return an oauth helper instance for values in cfg.
 
     @raises ValueError from OauthUrlHelper if some required fields have
-            true-ish values but others do not."""
+    true-ish values but others do not."""
     keys = ("consumer_key", "consumer_secret", "token_key", "token_secret")
     kwargs = dict([(r, cfg.get(r)) for r in keys])
     return url_helper.OauthUrlHelper(**kwargs)
